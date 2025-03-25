@@ -29,34 +29,6 @@ def get_bill_info(bill_id):
     except requests.exceptions.JSONDecodeError:
         print(f"Error: Response for Bill ID {bill_id} is not valid JSON. Response:", response.text)
         return None
-def check_bill_progress(bill_id):
-    """Checks if a bill has failed to progress by searching news articles."""
-    url = f"{API_BASE_URL}/{bill_id}/NewsArticles"
-    headers = {"accept": "text/plain"}
-    
-    response = requests.get(url, headers=headers)
-
-    try:
-        data = response.json()
-        if not isinstance(data, dict) or "items" not in data:
-            print(f"Unexpected response format for Bill ID {bill_id}: {data}")
-            return False
-        
-        phrase = "bill will make no further progress"
-        phrase3 = "not progress any further"
-        phrase2 = "bill is now an Act of Parliament"
-        print(data)
-        for article in data["items"]:
-            content = article.get("content", "").upper()
-            if phrase.upper() in content:
-                return 1
-            if phrase2.upper() in content:
-                return 2
-            if phrase3.upper() in content:
-                return 1
-            else:
-                return 3
-        
 
     except requests.exceptions.JSONDecodeError:
         print(f"Error: Response for Bill ID {bill_id} is not valid JSON. Response:", response.text)
@@ -137,7 +109,24 @@ def get_commons_seat_counts(for_date):
         print("Response:", response.text)
         return None
 
-# ---------------------- Main Execution ----------------------
+def check_bill_progress(bill_id):
+    """Checks if a bill is an act using the isAct field from the API."""
+    url = f"https://bills-api.parliament.uk/api/v1/Bills/{bill_id}"  
+    headers = {"accept": "application/json"}  
+    
+    response = requests.get(url, headers=headers)
+
+    try:
+        data = response.json()  
+        if 'isAct' in data:
+            return 2 if data['isAct'] else 1
+        else:
+            print(f"'isAct' field not found for Bill ID {bill_id}")
+            return 3  
+
+    except requests.exceptions.JSONDecodeError:
+        print(f"Error: Response for Bill ID {bill_id} is not valid JSON. Response:", response.text)
+        return False
 
 bill_number = input("Enter bill number: ")
 
@@ -485,7 +474,6 @@ def collect_bills_data(start_id, end_id):
             if info["introduced_date"]:
                 formatted_date = format_date_for_api(info["introduced_date"])
                 info["formatted_date"] = formatted_date
-                # Get seat counts for the day the bill was introduced (if possible)
                 seat_counts = get_commons_seat_counts(formatted_date)
                 info["seat_counts"] = seat_counts
             else:
