@@ -17,17 +17,17 @@ def get_bill_info(bill_id):
     try:
         data = response.json()
         if isinstance(data, dict):
-            long_title = data.get("longTitle", "N/A")
-            short_title = data.get("shortTitle", "N/A")
             orig_house = data.get("originatingHouse", "N/A")
             progress_status = check_bill_progress(bill_id)
-            introduced_date = data.get("lastUpdate", None)
+            
             sessionID = data.get("introducedSessionId", "N/A")
+
+            introduced_date = getIntroducedDate(bill_id)
+            
+            
             
             return {
                 "bill_id": bill_id,
-                "long_title": long_title,
-                "short_title": short_title,
                 "originating_house": orig_house,
                 "progress_status": progress_status,
                 "sessionID": sessionID,
@@ -36,6 +36,42 @@ def get_bill_info(bill_id):
     except Exception as e:
         print(f"Error processing bill id {bill_id}: {e}")
     return None
+
+
+
+def getIntroducedDate(bill_id):
+    """
+    Retrieve the first date of the bill from the /Stages endpoint.
+    The function sorts the stages by 'sortOrder' and returns the date
+    from the first stage that has at least one 'stageSittings' entry.
+    """
+    stages_url = f"{API_BASE_URL}/{bill_id}/Stages"
+    headers = {"accept": "application/json"}
+    
+    try:
+        response = requests.get(stages_url, headers=headers)
+        data = response.json()
+        items = data.get("items", [])
+        
+        if not items:
+            print(f"No stages found for bill {bill_id}.")
+            return None
+        
+        # Sort stages by sortOrder to get the first stage
+        sorted_stages = sorted(items, key=lambda stage: stage.get("sortOrder", float('inf')))
+        
+        for stage in sorted_stages:
+            stage_sittings = stage.get("stageSittings", [])
+            if stage_sittings:
+                # Return the date of the first stage sitting for the earliest stage
+                return stage_sittings[0].get("date", None)
+        
+        print(f"No valid stage sitting dates found for bill {bill_id}.")
+        return None
+    except Exception as e:
+        print(f"Error retrieving stages for bill {bill_id}: {e}")
+        return None
+
 
 def check_bill_progress(bill_id):
 
@@ -130,8 +166,13 @@ def collect_bill_details(bill_ids):
     """
     Loop over the unique bill IDs and collect details for each.
     """
+    c =0 
     results = []
     for bill_id in bill_ids:
+        c +=1
+        if c %500 == 0:
+            df_bills_current = pd.DataFrame(results)
+            df_bills_current.to_excel('tempsave.xlsx', index=False)
         print(f"Processing Bill ID: {bill_id}")
         info = get_bill_info(bill_id)
         if info is not None:
@@ -163,6 +204,7 @@ def get_unique_bill_ids(files):
             print(f"Error processing file {file}: {e}")
     return sorted(unique_ids)
 
+
 if __name__ == "__main__":
     # List of CSV files containing bill data
     csv_files = [
@@ -182,7 +224,8 @@ if __name__ == "__main__":
     # Convert the list of dictionaries to a DataFrame
     df_bills = pd.DataFrame(bills_data)
     
-    # Save the details to a CSV file
-    output_csv = "collected_bills_data.csv"
-    df_bills.to_csv(output_csv, index=False)
-    print(f"Bill details saved to {output_csv}")
+    # Save the details to an Excel file with a new sheet for every 500 samples
+    output_excel = "collected_bills_data.xlsx"
+    df_bills.to_excel(output_excel, index=False)
+    
+    print(f"Bill details saved to {output_excel}")
