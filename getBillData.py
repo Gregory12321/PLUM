@@ -166,13 +166,15 @@ def collect_bill_details(bill_ids):
     """
     Loop over the unique bill IDs and collect details for each.
     """
-    c =0 
+    c =497
     results = []
-    for bill_id in bill_ids:
+    for bill_id in bill_ids[499:]:
         c +=1
+        if c == 1800:
+            return results
         if c %500 == 0:
             df_bills_current = pd.DataFrame(results)
-            df_bills_current.to_excel('tempsave.xlsx', index=False)
+            df_bills_current.to_excel(f'tempsave{c}.xlsx', index=False)
         print(f"Processing Bill ID: {bill_id}")
         info = get_bill_info(bill_id)
         if info is not None:
