@@ -80,10 +80,10 @@ y = df_model[target]
 X_encoded = pd.get_dummies(X, columns=["sponsor_party"], drop_first=True)
 
 # Split the data into training (80%) and testing (20%) sets
-X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=0.2, random_state=32)
 
 # Initialize and fit the Random Forest classifier
-model = LogisticRegression(penalty='elasticnet', solver='saga', l1_ratio=0., random_state=42)
+model = RandomForestClassifier(n_estimators=100, random_state=32)
 model.fit(X_train, y_train)
 
 # Generate predictions on both training and test data
