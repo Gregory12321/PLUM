@@ -1,0 +1,139 @@
+import pandas as pd
+import numpy as np
+import ast
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, log_loss, classification_report
+
+# Display options for better visibility
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_colwidth', None)
+pd.set_option('display.width', 1000)
+
+# Load the Excel file containing merged data (including status and doc_prob)
+df = pd.read_excel("data_with_status_doc_prob.xlsx")
+
+print("Columns in Excel:", df.columns.tolist())
+print(df.head())
+
+# Function to safely parse seat_counts (assumes it's stored as a stringified dictionary)
+def parse_seat_counts(val):
+    if pd.isnull(val):
+        return {}
+    try:
+        return ast.literal_eval(val)
+    except Exception as e:
+        return {}
+
+# Parse the seat_counts column into a dictionary
+df["seat_counts_parsed"] = df["seat_counts"].apply(parse_seat_counts)
+
+# Extract seat counts for each party
+df["Labour_seats"] = df["seat_counts_parsed"].apply(lambda d: d.get("Labour", 0))
+df["Conservative_seats"] = df["seat_counts_parsed"].apply(lambda d: d.get("Conservative", 0))
+df["LibDem_seats"] = df["seat_counts_parsed"].apply(lambda d: d.get("Liberal Democrat", 0))
+
+# Filter the data to include only the rows you want to model.
+# Here we use progress_status as the target; adjust if needed.
+df_model = df[df["progress_status"].isin([1, 2])].copy()
+
+# Parse the doc_prob column from string to list of floats
+def parse_doc_prob(val):
+    if pd.isnull(val):
+        return []
+    try:
+        # Remove square brackets and split by whitespace
+        val = val.strip("[]")
+        parts = val.split()
+        return [float(x) for x in parts]
+    except Exception as e:
+        return []
+
+df_model["doc_prob_parsed"] = df_model["doc_prob"].apply(parse_doc_prob)
+
+# Expand the doc_prob_parsed list into separate columns (assuming 4 elements per row)
+doc_prob_df = pd.DataFrame(df_model["doc_prob_parsed"].tolist(), index=df_model.index)
+doc_prob_df.columns = ["doc_prob1", "doc_prob2", "doc_prob3", "doc_prob4"]
+
+# Join these new columns with df_model
+df_model = pd.concat([df_model, doc_prob_df], axis=1)
+
+# Check target distribution
+print("Target distribution:\n", df_model["progress_status"].value_counts())
+
+# Define features and target.
+# We now include the expanded doc_prob columns instead of the original doc_prob column.
+features = [
+    "Labour_seats", 
+    "Conservative_seats", 
+    "LibDem_seats", 
+    "sponsor_party", 
+    "doc_prob1", "doc_prob2", "doc_prob3", "doc_prob4"
+]
+target = "progress_status"  # change to "status" if needed
+
+X = df_model[features]
+y = df_model[target]
+
+# One-hot encode the categorical feature "sponsor_party"
+X_encoded = pd.get_dummies(X, columns=["sponsor_party"], drop_first=True)
+
+# Split the data into training (80%) and testing (20%) sets
+X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=0.2, random_state=42)
+
+# Initialize and fit the Random Forest classifier
+model = LogisticRegression(penalty='elasticnet', solver='saga', l1_ratio=0., random_state=42)
+model.fit(X_train, y_train)
+
+# Generate predictions on both training and test data
+y_pred_train = model.predict(X_train)
+y_pred_test = model.predict(X_test)
+
+# Calculate and display training and test accuracy
+train_acc = accuracy_score(y_train, y_pred_train)
+test_acc = accuracy_score(y_test, y_pred_test)
+print("\nTraining Accuracy: {:.2f}%".format(train_acc * 100))
+print("Test Accuracy: {:.2f}%".format(test_acc * 100))
+
+# Compute predicted probabilities and log loss on test data
+y_prob_test = model.predict_proba(X_test)
+try:
+    ll = log_loss(y_test, y_prob_test)
+except Exception as e:
+    ll = np.nan
+print("Test Log Loss: {:.4f}".format(ll))
+
+# Display classification report for test data
+print("\nClassification Report (Test Data):\n", classification_report(y_test, y_pred_test))
+
+# Prepare test results for export, including true labels and predictions
+test_results = X_test.copy()
+test_results["True_Label"] = y_test.values
+test_results["Predicted_Label"] = y_pred_test
+
+# Mark which predictions were correct
+test_results["Prediction_Correct"] = test_results.apply(
+    lambda row: "True" if row["True_Label"] == row["Predicted_Label"] else "False", axis=1
+)
+
+# Save the predictions to a CSV file
+output_filename = "test_predictions.csv"
+test_results.to_csv(output_filename, index=False)
+print(f"\nTest predictions have been saved to '{output_filename}'.")
+
+# Optionally, print out 3 sample correct and incorrect predictions for review
+correct_preds = test_results[test_results["Prediction_Correct"] == "True"]
+incorrect_preds = test_results[test_results["Prediction_Correct"] == "False"]
+
+print("\n--- 3 Sample Correct Predictions ---")
+if not correct_preds.empty:
+    print(correct_preds.head(3).to_string())
+else:
+    print("No correct predictions found.")
+
+print("\n--- 3 Sample Incorrect Predictions ---")
+if not incorrect_preds.empty:
+    print(incorrect_preds.head(3).to_string())
+else:
+    print("No incorrect predictions found.")
